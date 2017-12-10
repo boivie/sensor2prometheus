@@ -52,11 +52,13 @@ func onConfig(client MQTT.Client, message MQTT.Message) {
 	// {hygrometers,thermometers}/sovrum/config
 	parts := strings.SplitN(message.Topic(), "/", 3)
 	name := parts[1]
+	fmt.Printf("Config: %s(%s)\n", parts[0], name)
 	var config config
 	json.Unmarshal(message.Payload(), &config)
 	client.Subscribe(parts[0]+"/"+name+"/value", 0, func(client MQTT.Client, message MQTT.Message) {
 		value, err := strconv.ParseFloat(string(message.Payload()), 64)
 		if err == nil {
+			fmt.Printf("Value: %s(%s) = %.1f\n", parts[0], name, value)
 			if parts[0] == "thermometers" {
 				temperature.WithLabelValues(name, config.Area, config.Floor).Set(value)
 			} else if parts[0] == "hygrometers" {
