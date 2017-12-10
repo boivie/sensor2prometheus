@@ -2,12 +2,14 @@ package main
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -18,12 +20,19 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+type config struct {
+	Name  string `json:"name"`
+	Topic string `json:"topic"`
+	Area  string `json:"area"`
+	Floor string `json:"floor,omitempty"`
+}
+
 var temperature = prometheus.NewGaugeVec(
 	prometheus.GaugeOpts{
 		Name: "thermometer_temperature_celsius",
 		Help: "Current temperature of the thermometer.",
 	},
-	[]string{"area", "thermometer"},
+	[]string{"sensor_name", "area", "floor"},
 )
 
 var humidity = prometheus.NewGaugeVec(
@@ -31,7 +40,7 @@ var humidity = prometheus.NewGaugeVec(
 		Name: "hygrometer_humidity_percent",
 		Help: "Current humidity of the hygrometer.",
 	},
-	[]string{"area", "hygrometer"},
+	[]string{"sensor_name", "area", "floor"},
 )
 
 func init() {
@@ -39,29 +48,26 @@ func init() {
 	prometheus.MustRegister(humidity)
 }
 
-var areas = make(map[string]string)
-
-func onSensor(client MQTT.Client, message MQTT.Message) {
-	// {hygrometers,thermometers}/sovrum/{name,area,unit}
+func onConfig(client MQTT.Client, message MQTT.Message) {
+	// {hygrometers,thermometers}/sovrum/config
 	parts := strings.SplitN(message.Topic(), "/", 3)
 	name := parts[1]
-	if parts[2] == "area" {
-		areas[name] = string(message.Payload())
-	} else if parts[2] == "value" {
-		if area, ok := areas[name]; ok {
-			value, err := strconv.ParseFloat(string(message.Payload()), 64)
-			if err == nil {
-				if parts[0] == "thermometers" {
-					temperature.WithLabelValues(area, name).Set(value)
-				} else if parts[0] == "hygrometers" {
-					humidity.WithLabelValues(area, name).Set(value)
-				}
+	var config config
+	json.Unmarshal(message.Payload(), &config)
+	client.Subscribe(parts[0]+"/"+name+"/value", 0, func(client MQTT.Client, message MQTT.Message) {
+		value, err := strconv.ParseFloat(string(message.Payload()), 64)
+		if err == nil {
+			if parts[0] == "thermometers" {
+				temperature.WithLabelValues(name, config.Area, config.Floor).Set(value)
+			} else if parts[0] == "hygrometers" {
+				humidity.WithLabelValues(name, config.Area, config.Floor).Set(value)
 			}
 		}
-	}
+	})
 }
 
 func main() {
+	runtime.GOMAXPROCS(1)
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
@@ -89,10 +95,10 @@ func main() {
 	}
 	connOpts.AddBroker(*server)
 	connOpts.OnConnect = func(c MQTT.Client) {
-		if token := c.Subscribe("thermometers/#", 0, onSensor); token.Wait() && token.Error() != nil {
+		if token := c.Subscribe("thermometers/+/config", 0, onConfig); token.Wait() && token.Error() != nil {
 			panic(token.Error())
 		}
-		if token := c.Subscribe("hygrometers/#", 0, onSensor); token.Wait() && token.Error() != nil {
+		if token := c.Subscribe("hygrometers/+/config", 0, onConfig); token.Wait() && token.Error() != nil {
 			panic(token.Error())
 		}
 	}
