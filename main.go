@@ -23,7 +23,7 @@ var temperature = prometheus.NewGaugeVec(
 		Name: "thermometer_temperature_celsius",
 		Help: "Current temperature of the thermometer.",
 	},
-	[]string{"thermometer"},
+	[]string{"area", "thermometer"},
 )
 
 var humidity = prometheus.NewGaugeVec(
@@ -31,7 +31,7 @@ var humidity = prometheus.NewGaugeVec(
 		Name: "hygrometer_humidity_percent",
 		Help: "Current humidity of the hygrometer.",
 	},
-	[]string{"hygrometer"},
+	[]string{"area", "hygrometer"},
 )
 
 func init() {
@@ -39,20 +39,23 @@ func init() {
 	prometheus.MustRegister(humidity)
 }
 
+var areas = make(map[string]string)
+
 func onSensor(client MQTT.Client, message MQTT.Message) {
-	// hygrometers/sovrum/name
-	// hygrometers/sovrum/value
-	// thermometers/sovrum/name
-	// thermometers/sovrum/value
+	// {hygrometers,thermometers}/sovrum/{name,area,unit}
 	parts := strings.SplitN(message.Topic(), "/", 3)
-	if parts[2] == "value" {
-		name := parts[1]
-		value, err := strconv.ParseFloat(string(message.Payload()), 64)
-		if err == nil {
-			if parts[0] == "thermometers" {
-				temperature.WithLabelValues(name).Set(value)
-			} else if parts[0] == "hygrometers" {
-				humidity.WithLabelValues(name).Set(value)
+	name := parts[1]
+	if parts[2] == "area" {
+		areas[name] = string(message.Payload())
+	} else if parts[2] == "value" {
+		if area, ok := areas[name]; ok {
+			value, err := strconv.ParseFloat(string(message.Payload()), 64)
+			if err == nil {
+				if parts[0] == "thermometers" {
+					temperature.WithLabelValues(area, name).Set(value)
+				} else if parts[0] == "hygrometers" {
+					humidity.WithLabelValues(area, name).Set(value)
+				}
 			}
 		}
 	}
