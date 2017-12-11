@@ -27,6 +27,14 @@ type config struct {
 	Floor string `json:"floor,omitempty"`
 }
 
+var heartbeat = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "sensor2prometheus_last_updated",
+		Help: "When the sensor was last updated",
+	},
+	[]string{"sensor_name"},
+)
+
 var temperature = prometheus.NewGaugeVec(
 	prometheus.GaugeOpts{
 		Name: "thermometer_temperature_celsius",
@@ -44,6 +52,7 @@ var humidity = prometheus.NewGaugeVec(
 )
 
 func init() {
+	prometheus.MustRegister(heartbeat)
 	prometheus.MustRegister(temperature)
 	prometheus.MustRegister(humidity)
 }
@@ -64,6 +73,7 @@ func onConfig(client MQTT.Client, message MQTT.Message) {
 			} else if parts[0] == "hygrometers" {
 				humidity.WithLabelValues(name, config.Area, config.Floor).Set(value)
 			}
+			heartbeat.WithLabelValues(name).SetToCurrentTime()
 		}
 	})
 }
