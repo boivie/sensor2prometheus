@@ -104,6 +104,10 @@ func main() {
 			panic(token.Error())
 		}
 	}
+	connOpts.OnConnectionLost = func(c MQTT.Client, err error) {
+		fmt.Printf("Disconnected from broker: %v - quitting\n", err)
+		os.Exit(1)
+	}
 
 	client := MQTT.NewClient(connOpts)
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
