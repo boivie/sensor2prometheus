@@ -105,10 +105,14 @@ func main() {
 		Password:             *password,
 		MaxReconnectInterval: 1 * time.Second,
 		KeepAlive:            int64(30 * time.Second),
+		PingTimeout:          10 * time.Second,
+		ConnectTimeout:       30 * time.Second,
+		AutoReconnect:        true,
 		TLSConfig:            tls.Config{InsecureSkipVerify: true, ClientAuth: tls.NoClientCert},
 	}
 	connOpts.AddBroker(*server)
 	connOpts.OnConnect = func(c MQTT.Client) {
+		fmt.Println("Connected to MQTT broker - subscribing")
 		if token := c.Subscribe("thermometers/+/config", 0, onConfig); token.Wait() && token.Error() != nil {
 			panic(token.Error())
 		}
